@@ -1,0 +1,76 @@
+# RAG 测试配置文件
+
+# Spring AI 服务配置
+spring_ai:
+  base_url: "http://localhost:8092/api"  # 修改为你的 Spring AI 服务地址
+  endpoints:
+    vector_search: "/api/rag/search/vector"
+    bm25_search: "/api/rag/search/bm25"
+    hybrid_search: "/api/rag/search/hybrid"
+    rag_qa: "/api/rag/qa"
+  timeout: 30  # 请求超时时间（秒）
+  api_key: sk-0ee22ds3csf14seffaec2f2a1htaa
+
+# 测试配置
+test:
+  testset_path: "../data/testsets/wait_test_testset.json"
+  top_k: 5  # 检索返回的文档数量
+  
+  # 测试组配置
+  search_types:
+    - name: "vector_only"
+      type: "vector"
+      enabled: false
+    - name: "bm25_only"
+      type: "bm25"
+      enabled: false
+    - name: "hybrid_0.7_0.3"
+      type: "hybrid"
+      vector_weight: 0.7
+      bm25_weight: 0.3
+      enabled: false
+    - name: "hybrid_0.3_0.7"
+      type: "hybrid"
+      vector_weight: 0.3
+      bm25_weight: 0.7
+      enabled: true  # 可选测试
+
+# Ragas 评估配置
+ragas:
+  metrics:
+    - context_precision
+    - context_recall
+    - faithfulness
+    - answer_relevancy
+    - answer_correctness
+    - answer_similarity
+  
+  # 模型配置
+  llm:
+    provider: "dashscope"  # dashscope, openai, etc.
+    model: "qwen-turbo"
+  
+  embeddings:
+    provider: "dashscope"
+    model: "text-embedding-v3"
+
+# 输出配置
+output:
+  results_dir: "results"
+  save_format:
+    - "csv"
+    - "json"
+    - "html"
+  generate_visualizations: true
+  save_raw_responses: true  # 保存原始响应用于调试
+
+# 日志配置
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  log_file: "logs/rag_test.log"
+
+
+
+
+
+

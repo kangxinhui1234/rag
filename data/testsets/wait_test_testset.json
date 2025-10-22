@@ -1,0 +1,33 @@
+{
+  "testset": [
+    {
+      "question": "2022年平安银行的营业收入是多少？",
+      "ground_truth": "2022年平安银行实现营业收入1,874.90亿元。",
+      "ground_truth_contexts": [
+        "平安银行2022年年度报告显示，全年实现营业收入1,874.90亿元，同比增长7.2%。",
+        "根据财务数据，2022年营业收入主要来源于利息净收入和手续费及佣金净收入。"
+      ],
+      "metadata": {
+        "doc_source": "000001_2022_ZGPA_2022_YEAR_2023-03-08.pdf",
+        "difficulty": "simple",
+        "type": "factual",
+        "category": "财务数据"
+      }
+    },
+    {
+      "question": "What is the definition of 中国平安 in the context provided?",
+      "ground_truth": "中国平安, also referred to as 平安集团, is the China Ping An Insurance (Group) Co., Ltd.",
+      "ground_truth_contexts": [
+        "释  义 \n4 \n \n平安银行股份有限公司 \n2022 年年度报告 \n释  义 \n \n释义项 指 释义内容 \n平安银行、本行 指 \n深圳发展银行股份有限公司（“深圳发展银行”或“深发展”）以吸\n收合并原平安银行股份有限公司（“原平安银行”）的方式于 2012\n年完成两行整合并更名后的银行 \n本集团 指 平安银行股份有限公司及其全资子公司平安理财有限责任公司 \n深圳发展银行、深发展 指 \n成立于 1987 年 12 月22 日的全国性股份制商业银行， 吸收合并原平安\n银行后更名为平安银行 \n原平安银行 指 成立于 1995 年 6 月的股份制商业银行， 于2012 年6 月12 日注销登记 \n中国平安、平安集团 指 中国平安保险（集团）股份有限公司 \n平安理财 指 平安理财有限责任公司 \n平安寿险 指 中国平安人寿保险股份有限公司 \n央行 指 中国人民银行 \n中国证监会、证监会 指 中国证券监督管理委员会 \n中国银保监会、银保监会 指 中国银行保险监督管理委员会 "
+      ],
+      "metadata": {
+        "synthesizer_name": "single_hop_specific_query_synthesizer",
+        "difficulty": "simple",
+        "type": "factual",
+        "category": "金融/银行业务"
+      }
+    }
+  ]
+}
+
+
