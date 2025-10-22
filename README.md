@@ -14,7 +14,7 @@
 ## 📁 项目结构
 
 ```
-pythonProject6/
+rag/
 ├── config/
 │   └── test_config.yaml          # 测试配置文件
 ├── data/
