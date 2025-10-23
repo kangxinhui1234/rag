@@ -108,14 +108,17 @@ def main():
         logger.info("请先运行 test_loader.py 生成测试集")
         return 1
 
-    api_key = spring_ai_config['api_key']
+    # 获取 DashScope API 密钥（用于 RAGAS 评估）
+    # 优先级：ragas.api_key > 环境变量 DASHSCOPE_API_KEY
+    api_key = spring_ai_config.get('api_key')
     if not api_key:
         api_key = os.environ.get('DASHSCOPE_API_KEY')
 
     if not api_key:
-        logger.error("未设置 DASHSCOPE_API_KEY 环境变量")
+        logger.error("未设置 DASHSCOPE_API_KEY")
+        logger.info("请在配置文件 ragas.api_key 中设置，或设置环境变量 DASHSCOPE_API_KEY")
         return 1
-    
+    os.environ['DASHSCOPE_API_KEY'] = api_key
     # 构建检索配置
     search_configs = []
     for config_item in test_config['search_types']:

@@ -179,6 +179,13 @@ class ReportGenerator:
                 value_name='score'
             )
             
+            # 移除None值
+            df_melted = df_melted.dropna(subset=['score'])
+            
+            if len(df_melted) == 0:
+                logger.warning("箱线图：所有数据为空，跳过生成")
+                return None
+            
             # 绘制箱线图
             fig, ax = plt.subplots(figsize=(14, 8))
             sns.boxplot(data=df_melted, x='metric', y='score', hue='search_type', ax=ax)
@@ -260,6 +267,19 @@ class ReportGenerator:
             logger.error(f"生成热力图失败: {e}")
             return None
     
+    def _load_evaluation_results(self) -> List[Dict[str, Any]]:
+        """加载详细评估结果"""
+        try:
+            json_file = self.results_dir / "evaluation_results.json"
+            if json_file.exists():
+                with open(json_file, 'r', encoding='utf-8') as f:
+                    results = json.load(f)
+                    logger.info(f"加载了 {len(results)} 条详细评估结果")
+                    return results
+        except Exception as e:
+            logger.error(f"加载评估结果失败: {e}")
+        return []
+    
     def generate_html_report(self) -> str:
         """
         生成 HTML 报告
@@ -290,6 +310,9 @@ class ReportGenerator:
         summary = self.report.get('test_summary', {})
         stats = self.report.get('summary_statistics', {})
         
+        # 加载详细评估结果
+        evaluation_results = self._load_evaluation_results()
+        
         html = f"""
 <!DOCTYPE html>
 <html lang="zh-CN">
@@ -299,23 +322,65 @@ class ReportGenerator:
     <title>RAG 测试报告</title>
     <style>
         body {{ font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }}
-        .container {{ max-width: 1200px; margin: 0 auto; background-color: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
+        .container {{ max-width: 1400px; margin: 0 auto; background-color: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
         h1 {{ color: #333; border-bottom: 3px solid #4CAF50; padding-bottom: 10px; }}
         h2 {{ color: #555; margin-top: 30px; border-left: 4px solid #4CAF50; padding-left: 10px; }}
         .summary {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin: 20px 0; }}
         .summary-card {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 8px; }}
         .summary-card h3 {{ margin: 0; font-size: 14px; opacity: 0.9; }}
         .summary-card p {{ margin: 10px 0 0 0; font-size: 32px; font-weight: bold; }}
-        table {{ width: 100%; border-collapse: collapse; margin: 20px 0; }}
-        th, td {{ padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }}
-        th {{ background-color: #4CAF50; color: white; }}
+        table {{ width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 14px; }}
+        th, td {{ padding: 10px 8px; text-align: left; border-bottom: 1px solid #ddd; }}
+        th {{ background-color: #4CAF50; color: white; position: sticky; top: 0; z-index: 10; }}
         tr:hover {{ background-color: #f5f5f5; }}
         .metric-good {{ color: #4CAF50; font-weight: bold; }}
         .metric-medium {{ color: #FF9800; font-weight: bold; }}
         .metric-poor {{ color: #f44336; font-weight: bold; }}
+        .metric-na {{ color: #999; font-style: italic; }}
         .chart {{ margin: 20px 0; text-align: center; }}
         .chart img {{ max-width: 100%; height: auto; border: 1px solid #ddd; border-radius: 4px; }}
         .footer {{ margin-top: 40px; padding-top: 20px; border-top: 1px solid #ddd; text-align: center; color: #888; }}
+        
+        /* 详细数据表格样式 */
+        .data-controls {{ display: flex; justify-content: space-between; align-items: center; margin: 20px 0; flex-wrap: wrap; gap: 15px; }}
+        .search-box input {{ padding: 10px 15px; width: 300px; border: 2px solid #ddd; border-radius: 5px; font-size: 14px; }}
+        .search-box input:focus {{ outline: none; border-color: #4CAF50; }}
+        .filter-controls {{ display: flex; gap: 15px; align-items: center; }}
+        .filter-controls label {{ font-size: 14px; color: #555; }}
+        .filter-controls select {{ padding: 8px 12px; border: 2px solid #ddd; border-radius: 5px; font-size: 14px; cursor: pointer; }}
+        .table-container {{ overflow-x: auto; max-height: 600px; border: 1px solid #ddd; border-radius: 5px; }}
+        .text-cell {{ max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: help; }}
+        .detail-btn {{ background-color: #2196F3; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; }}
+        .detail-btn:hover {{ background-color: #0b7dda; }}
+        
+        /* 分页样式 */
+        .pagination {{ display: flex; justify-content: center; align-items: center; gap: 15px; margin: 20px 0; }}
+        .pagination button {{ padding: 10px 20px; background-color: #4CAF50; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; }}
+        .pagination button:hover:not(:disabled) {{ background-color: #45a049; }}
+        .pagination button:disabled {{ background-color: #ccc; cursor: not-allowed; }}
+        .pagination span {{ font-size: 14px; color: #555; }}
+        
+        /* 模态框样式 */
+        .modal {{ display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.5); }}
+        .modal-content {{ background-color: #fefefe; margin: 3% auto; padding: 20px 30px; border: 1px solid #888; border-radius: 8px; width: 80%; max-width: 900px; max-height: 85vh; overflow-y: auto; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }}
+        .close {{ color: #aaa; float: right; font-size: 32px; font-weight: bold; cursor: pointer; line-height: 20px; }}
+        .close:hover, .close:focus {{ color: #000; }}
+        .detail-section {{ margin: 20px 0; padding: 15px; background-color: #f9f9f9; border-radius: 5px; border-left: 4px solid #4CAF50; }}
+        .detail-section h3 {{ margin-top: 0; color: #333; font-size: 16px; }}
+        .detail-section p {{ margin: 10px 0; color: #555; line-height: 1.6; white-space: pre-wrap; word-wrap: break-word; }}
+        .context-item {{ margin: 15px 0; padding: 0; background-color: white; border-radius: 6px; border: 1px solid #ddd; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }}
+        .context-header {{ display: flex; justify-content: space-between; align-items: center; padding: 10px 15px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }}
+        .context-header strong {{ font-size: 14px; }}
+        .context-length {{ font-size: 12px; opacity: 0.9; background-color: rgba(255,255,255,0.2); padding: 3px 8px; border-radius: 10px; }}
+        .context-text {{ padding: 15px; max-height: 300px; overflow-y: auto; line-height: 1.8; color: #333; font-size: 14px; text-align: justify; }}
+        .context-text::-webkit-scrollbar {{ width: 8px; }}
+        .context-text::-webkit-scrollbar-track {{ background: #f1f1f1; border-radius: 4px; }}
+        .context-text::-webkit-scrollbar-thumb {{ background: #888; border-radius: 4px; }}
+        .context-text::-webkit-scrollbar-thumb:hover {{ background: #555; }}
+        .metrics-table {{ width: 100%; background-color: white; }}
+        .metrics-table td {{ padding: 8px; border-bottom: 1px solid #eee; }}
+        .metrics-table td:first-child {{ font-weight: bold; color: #555; width: 40%; }}
+        .metrics-table td:last-child {{ color: #333; text-align: right; }}
     </style>
 </head>
 <body>
@@ -356,16 +421,22 @@ class ReportGenerator:
         for metric, values in stats.items():
             if metric != 'overall_score' and isinstance(values, dict):
                 mean_val = values.get('mean', 0)
+                if mean_val is None:
+                    mean_val = 0
                 metric_class = 'metric-good' if mean_val >= 0.7 else ('metric-medium' if mean_val >= 0.5 else 'metric-poor')
+                
+                # 安全地获取值，处理None
+                def safe_format(val):
+                    return f"{val:.3f}" if val is not None else "N/A"
                 
                 html += f"""
             <tr>
                 <td>{metric}</td>
-                <td class="{metric_class}">{mean_val:.3f}</td>
-                <td>{values.get('std', 0):.3f}</td>
-                <td>{values.get('min', 0):.3f}</td>
-                <td>{values.get('max', 0):.3f}</td>
-                <td>{values.get('median', 0):.3f}</td>
+                <td class="{metric_class}">{safe_format(mean_val)}</td>
+                <td>{safe_format(values.get('std'))}</td>
+                <td>{safe_format(values.get('min'))}</td>
+                <td>{safe_format(values.get('max'))}</td>
+                <td>{safe_format(values.get('median'))}</td>
             </tr>
 """
         
@@ -404,6 +475,312 @@ class ReportGenerator:
 """
         
         html += """
+        <h2>📋 详细测试数据</h2>
+        <div class="data-controls">
+            <div class="search-box">
+                <input type="text" id="searchInput" placeholder="🔍 搜索问题、答案或配置..." onkeyup="filterTable()">
+            </div>
+            <div class="filter-controls">
+                <label>检索类型：
+                    <select id="searchTypeFilter" onchange="filterTable()">
+                        <option value="">全部</option>
+"""
+        
+        # 添加检索类型选项
+        if evaluation_results:
+            search_types = set(r.get('search_type', '') for r in evaluation_results)
+            for st in sorted(search_types):
+                html += f'                        <option value="{st}">{st}</option>\n'
+        
+        html += """                    </select>
+                </label>
+                <label>每页显示：
+                    <select id="pageSize" onchange="changePageSize()">
+                        <option value="10">10</option>
+                        <option value="20" selected>20</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                    </select>
+                </label>
+            </div>
+        </div>
+        
+        <div class="table-container">
+            <table id="detailTable">
+                <thead>
+                    <tr>
+                        <th>序号</th>
+                        <th onclick="sortTable(1)" style="cursor:pointer;">问题 ▼</th>
+                        <th>答案</th>
+                        <th>标准答案</th>
+                        <th onclick="sortTable(4)" style="cursor:pointer;">检索类型 ▼</th>
+                        <th onclick="sortTable(5)" style="cursor:pointer;">上下文精确度 ▼</th>
+                        <th onclick="sortTable(6)" style="cursor:pointer;">上下文召回率 ▼</th>
+                        <th onclick="sortTable(7)" style="cursor:pointer;">忠实度 ▼</th>
+                        <th onclick="sortTable(8)" style="cursor:pointer;">答案相关性 ▼</th>
+                        <th onclick="sortTable(9)" style="cursor:pointer;">答案正确性 ▼</th>
+                        <th onclick="sortTable(10)" style="cursor:pointer;">答案相似度 ▼</th>
+                        <th onclick="sortTable(11)" style="cursor:pointer;">响应时间(s) ▼</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="tableBody">
+"""
+        
+        # 添加表格数据
+        for idx, result in enumerate(evaluation_results, 1):
+            question = result.get('question', '')
+            response = result.get('response', '')
+            reference = result.get('reference', '')
+            search_type = result.get('search_type', '')
+            
+            # 评估指标
+            context_precision = result.get('context_precision', 0)
+            context_recall = result.get('context_recall', 0)
+            faithfulness = result.get('faithfulness', 0)
+            answer_relevancy = result.get('answer_relevancy', 0)
+            answer_correctness = result.get('answer_correctness', 0)
+            answer_similarity = result.get('answer_similarity', 0)
+            response_time = result.get('response_time', 0)
+            
+            # 缩短显示文本
+            question_short = question[:50] + '...' if len(question) > 50 else question
+            response_short = response[:80] + '...' if len(response) > 80 else response
+            reference_short = reference[:80] + '...' if len(reference) > 80 else reference
+            
+            # 根据得分设置颜色类
+            def get_metric_class(score):
+                if score is None:
+                    return 'metric-na'
+                if score >= 0.7:
+                    return 'metric-good'
+                elif score >= 0.5:
+                    return 'metric-medium'
+                else:
+                    return 'metric-poor'
+            
+            # 格式化指标显示
+            def format_metric(value):
+                return f"{value:.3f}" if value is not None else "N/A"
+            
+            def format_time(value):
+                return f"{value:.2f}" if value is not None else "N/A"
+            
+            html += f"""
+                    <tr data-index="{idx}">
+                        <td>{idx}</td>
+                        <td class="text-cell" title="{question}">{question_short}</td>
+                        <td class="text-cell" title="{response}">{response_short}</td>
+                        <td class="text-cell" title="{reference}">{reference_short}</td>
+                        <td>{search_type}</td>
+                        <td class="{get_metric_class(context_precision)}">{format_metric(context_precision)}</td>
+                        <td class="{get_metric_class(context_recall)}">{format_metric(context_recall)}</td>
+                        <td class="{get_metric_class(faithfulness)}">{format_metric(faithfulness)}</td>
+                        <td class="{get_metric_class(answer_relevancy)}">{format_metric(answer_relevancy)}</td>
+                        <td class="{get_metric_class(answer_correctness)}">{format_metric(answer_correctness)}</td>
+                        <td class="{get_metric_class(answer_similarity)}">{format_metric(answer_similarity)}</td>
+                        <td>{format_time(response_time)}</td>
+                        <td><button class="detail-btn" onclick="showDetail({idx})">详情</button></td>
+                    </tr>
+"""
+        
+        html += """
+                </tbody>
+            </table>
+        </div>
+        
+        <div class="pagination">
+            <button onclick="previousPage()" id="prevBtn">« 上一页</button>
+            <span id="pageInfo"></span>
+            <button onclick="nextPage()" id="nextBtn">下一页 »</button>
+        </div>
+        
+        <!-- 详情弹窗 -->
+        <div id="detailModal" class="modal">
+            <div class="modal-content">
+                <span class="close" onclick="closeDetail()">&times;</span>
+                <div id="detailContent"></div>
+            </div>
+        </div>
+        
+        <script>
+        // 存储所有数据
+        const allData = """ + json.dumps(evaluation_results, ensure_ascii=False) + """;
+        let currentPage = 1;
+        let pageSize = 20;
+        let filteredData = allData;
+        
+        // 初始化
+        displayPage();
+        
+        function filterTable() {
+            const searchText = document.getElementById('searchInput').value.toLowerCase();
+            const searchType = document.getElementById('searchTypeFilter').value;
+            
+            filteredData = allData.filter(item => {
+                const matchSearch = !searchText || 
+                    item.question.toLowerCase().includes(searchText) ||
+                    item.response.toLowerCase().includes(searchText) ||
+                    item.config_name.toLowerCase().includes(searchText);
+                
+                const matchType = !searchType || item.search_type === searchType;
+                
+                return matchSearch && matchType;
+            });
+            
+            currentPage = 1;
+            displayPage();
+        }
+        
+        function changePageSize() {
+            pageSize = parseInt(document.getElementById('pageSize').value);
+            currentPage = 1;
+            displayPage();
+        }
+        
+        function displayPage() {
+            const totalPages = Math.ceil(filteredData.length / pageSize);
+            const start = (currentPage - 1) * pageSize;
+            const end = start + pageSize;
+            
+            // 隐藏所有行
+            const rows = document.querySelectorAll('#tableBody tr');
+            rows.forEach(row => row.style.display = 'none');
+            
+            // 显示当前页的行
+            const displayData = filteredData.slice(start, end);
+            displayData.forEach(item => {
+                const index = item.test_metadata?.test_id || allData.indexOf(item) + 1;
+                const row = document.querySelector(`tr[data-index="${index}"]`);
+                if (row) row.style.display = '';
+            });
+            
+            // 更新分页信息
+            document.getElementById('pageInfo').textContent = 
+                `第 ${currentPage} / ${totalPages || 1} 页 (共 ${filteredData.length} 条记录)`;
+            
+            // 更新按钮状态
+            document.getElementById('prevBtn').disabled = currentPage === 1;
+            document.getElementById('nextBtn').disabled = currentPage >= totalPages;
+        }
+        
+        function previousPage() {
+            if (currentPage > 1) {
+                currentPage--;
+                displayPage();
+            }
+        }
+        
+        function nextPage() {
+            const totalPages = Math.ceil(filteredData.length / pageSize);
+            if (currentPage < totalPages) {
+                currentPage++;
+                displayPage();
+            }
+        }
+        
+        function sortTable(columnIndex) {
+            // 简单的排序功能
+            alert('排序功能开发中...');
+        }
+        
+        function showDetail(index) {
+            const data = allData[index - 1];
+            if (!data) return;
+            
+            // 文本清理函数：移除多余空格和换行符
+            function cleanText(text) {
+                if (!text) return '';
+                return text
+                    .replace(/\\n+/g, ' ')           // 将换行符替换为空格
+                    .replace(/\s+/g, ' ')            // 将多个空格合并为一个
+                    .replace(/\s*,\s*/g, ', ')       // 规范化逗号周围的空格
+                    .trim();                         // 移除首尾空格
+            }
+            
+            const contexts = data.retrieved_contexts || [];
+            const contextHtml = contexts.map((ctx, i) => {
+                const cleanedText = cleanText(ctx);
+                return `<div class="context-item">
+                    <div class="context-header">
+                        <strong>📄 上下文 ${i+1}</strong>
+                        <span class="context-length">${cleanedText.length} 字符</span>
+                    </div>
+                    <div class="context-text">${cleanedText}</div>
+                </div>`;
+            }).join('');
+            
+            const html = `
+                <h2>测试详情 #${index}</h2>
+                <div class="detail-section">
+                    <h3>📝 问题</h3>
+                    <p>${cleanText(data.question)}</p>
+                </div>
+                <div class="detail-section">
+                    <h3>💬 AI回答</h3>
+                    <p>${cleanText(data.response)}</p>
+                </div>
+                <div class="detail-section">
+                    <h3>✅ 标准答案</h3>
+                    <p>${cleanText(data.reference) || '无'}</p>
+                </div>
+                <div class="detail-section">
+                    <h3>📚 AI召回上下文 (${contexts.length} 个)</h3>
+                    ${contextHtml || '<p>无上下文</p>'}
+                </div>
+                ${data.ground_truth_contexts && data.ground_truth_contexts.length > 0 ? `
+                <div class="detail-section">
+                    <h3>✅ 标准参考上下文 (${data.ground_truth_contexts.length} 个)</h3>
+                    ${data.ground_truth_contexts.map((ctx, i) => {
+                        const cleanedText = cleanText(ctx);
+                        return `<div class="context-item context-truth">
+                            <div class="context-header" style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);">
+                                <strong>✓ 标准上下文 ${i+1}</strong>
+                                <span class="context-length">${cleanedText.length} 字符</span>
+                            </div>
+                            <div class="context-text">${cleanedText}</div>
+                        </div>`;
+                    }).join('')}
+                </div>
+                ` : ''}
+                <div class="detail-section">
+                    <h3>📊 评估指标</h3>
+                    <table class="metrics-table">
+                        <tr><td>上下文精确度</td><td>${(data.context_precision || 0).toFixed(3)}</td></tr>
+                        <tr><td>上下文召回率</td><td>${(data.context_recall || 0).toFixed(3)}</td></tr>
+                        <tr><td>忠实度</td><td>${(data.faithfulness || 0).toFixed(3)}</td></tr>
+                        <tr><td>答案相关性</td><td>${(data.answer_relevancy || 0).toFixed(3)}</td></tr>
+                        <tr><td>答案正确性</td><td>${(data.answer_correctness || 0).toFixed(3)}</td></tr>
+                        <tr><td>答案相似度</td><td>${(data.answer_similarity || 0).toFixed(3)}</td></tr>
+                        <tr><td>响应时间</td><td>${(data.response_time || 0).toFixed(2)}s</td></tr>
+                    </table>
+                </div>
+                <div class="detail-section">
+                    <h3>⚙️ 配置信息</h3>
+                    <p><strong>检索类型:</strong> ${data.search_type || '未知'}</p>
+                    <p><strong>配置名称:</strong> ${data.config_name || '未知'}</p>
+                    <p><strong>向量权重:</strong> ${data.vector_weight || 'N/A'}</p>
+                    <p><strong>BM25权重:</strong> ${data.bm25_weight || 'N/A'}</p>
+                </div>
+            `;
+            
+            document.getElementById('detailContent').innerHTML = html;
+            document.getElementById('detailModal').style.display = 'block';
+        }
+        
+        function closeDetail() {
+            document.getElementById('detailModal').style.display = 'none';
+        }
+        
+        // 点击模态框外部关闭
+        window.onclick = function(event) {
+            const modal = document.getElementById('detailModal');
+            if (event.target == modal) {
+                modal.style.display = 'none';
+            }
+        }
+        </script>
+        
         <div class="footer">
             <p>RAG 测试系统 | 生成时间: """ + pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S') + """</p>
         </div>
